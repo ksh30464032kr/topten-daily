@@ -484,6 +484,10 @@ def rect_from_bounds(x1, x2, y1, y2):
     return {'left': int(x1), 'top': int(y1), 'width': int(x2 - x1), 'height': int(y2 - y1)}
 
 
+def cell_has_content(crop):
+    return bool(crop.size and np.any(cv2.cvtColor(crop, cv2.COLOR_BGR2GRAY) < 205))
+
+
 @app.get('/health')
 def health():
     return jsonify({'ok': True, 'engine': 'PaddleOCR', 'codeModel': 'en', 'metaModel': 'korean'})
@@ -588,12 +592,17 @@ def report():
             cr = rect_from_bounds(*grid['code'], y1, y2)
             qr = rect_from_bounds(*grid['quantity'], y1, y2)
 
+            # Blank trailing rows are not products. Do not run the many OCR
+            # variants on an empty cell (or on a zero-sized crop).
+            code_crop = crop_cell(img, cr)
+            if not cell_has_content(code_crop):
+                continue
             qty_crop = crop_quantity_cell(img, qr)
-            qty, qreads = recognize_quantity(qty_crop)
+            qty, qreads = recognize_quantity(qty_crop) if cell_has_content(qty_crop) else (None, [])
             if qty is None:
                 # An unreadable product quantity could change the TOP5. Never
                 # silently treat it as zero; blank/footer rows are not products.
-                code = recognize_code(crop_cell(img, cr))
+                code = recognize_code(code_crop)
                 if CODE_RE.fullmatch(code.get('code', '')):
                     raise ValueError('판매수량을 읽지 못한 상품이 있습니다. 더 선명한 원본 사진으로 다시 올려 주세요.')
                 continue

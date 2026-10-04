@@ -12,7 +12,7 @@ handler.decorator_list = []
 
 
 class RankingTests(unittest.TestCase):
-    def run_report(self, quantities, invalid=()):
+    def run_report(self, quantities, invalid=(), blank=()):
         codes = [f'MSG4TS{i:04d}' for i in range(len(quantities))]
         reads = []
 
@@ -28,6 +28,7 @@ class RankingTests(unittest.TestCase):
             rect_from_bounds=lambda x1, x2, y1, y2: dict(left=x1, top=y1, width=x2-x1, height=y2-y1),
             crop_cell=lambda img, rect: rect,
             crop_quantity_cell=lambda img, rect: rect,
+            cell_has_content=lambda rect: rect['top'] - 2 not in blank,
             recognize_quantity=lambda rect: (quantities[rect['top']-2], []),
             recognize_code=read_code,
             CODE_RE=re.compile(r'^M[SK][A-Z][0-9][A-Z]{2}[0-9]{4}$'),
@@ -59,6 +60,11 @@ class RankingTests(unittest.TestCase):
     def test_unreadable_product_quantity_fails(self):
         result, _, _ = self.run_report([9, 8, 7, 6, 5, None])
         self.assertEqual(result[1], 400)
+
+    def test_blank_rows_need_no_ocr(self):
+        result, reads, _ = self.run_report([9, 8, 7, 6, 5, None, None], blank=(5, 6))
+        self.assertEqual(len(result['storeRanking']), 5)
+        self.assertEqual(reads, [0, 1, 2, 3, 4])
 
     def test_too_few_products_fails(self):
         result, _, _ = self.run_report([9, 8, 7, 6, 5], invalid=(4,))
