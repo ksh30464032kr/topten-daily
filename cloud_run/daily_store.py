@@ -31,9 +31,9 @@ def storage_headers():
     return {'Authorization': 'Bearer ' + _credential['token']}
 
 
-def read_day(date):
+def read_day(date, prefix='daily'):
     bucket = os.environ['DAILY_REPORT_BUCKET']
-    url = f'https://storage.googleapis.com/storage/v1/b/{bucket}/o/' + quote(f'daily/{date}.json', safe='')
+    url = f'https://storage.googleapis.com/storage/v1/b/{bucket}/o/' + quote(f'{prefix}/{date}.json', safe='')
     response = requests.get(url, headers=storage_headers(), timeout=12)
     if response.status_code == 404:
         return None
@@ -46,10 +46,10 @@ def read_day(date):
     return result
 
 
-def write_day(date, document, revision):
+def write_day(date, document, revision, prefix='daily'):
     bucket = os.environ['DAILY_REPORT_BUCKET']
     response = requests.post(f'https://storage.googleapis.com/upload/storage/v1/b/{bucket}/o',
-        params={'uploadType': 'media', 'name': f'daily/{date}.json', 'ifGenerationMatch': revision or '0'},
+        params={'uploadType': 'media', 'name': f'{prefix}/{date}.json', 'ifGenerationMatch': revision or '0'},
         headers={**storage_headers(), 'Content-Type': 'application/json'},
         data=json.dumps(document, ensure_ascii=False).encode('utf-8'), timeout=15)
     if response.status_code == 412:

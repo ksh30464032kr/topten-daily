@@ -14,6 +14,8 @@ app = Flask(__name__)
 CORS(app)
 from daily_store import register_daily_routes, is_admin
 register_daily_routes(app)
+from schedule_store import register_schedule_routes
+register_schedule_routes(app)
 
 print('[TOPTEN OCR] Loading OCR models. First launch can take a few minutes.', flush=True)
 # English recognition is much better for TOPTEN's uppercase alphanumeric product codes.
