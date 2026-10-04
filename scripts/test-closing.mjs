@@ -1,0 +1,18 @@
+import assert from 'node:assert/strict';
+import fs from 'node:fs/promises';
+import ts from 'typescript';
+const source=await fs.readFile(new URL('../lib/closing.ts',import.meta.url),'utf8');
+const compiled=ts.transpileModule(source,{compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.ES2022}}).outputText;
+const {achievement,closingMessage}=await import('data:text/javascript;base64,'+Buffer.from(compiled).toString('base64'));
+assert.equal(closingMessage(55800,'ok','',null,false),'마감 이상 없습니다.\n명일 이체금액 55,800원입니다.');
+assert.equal(closingMessage(0,'ok','',null,false),'마감 이상 없습니다.\n명일 이체금액 0원입니다.');
+assert.equal(closingMessage(null,'ok','',null,false),'');
+assert.equal(closingMessage(-100,'ok','',null,false),'');
+assert.equal(closingMessage(55800,'','',null,false),'');
+assert.equal(closingMessage(55800,'issue','',null,false),'');
+assert.equal(achievement('0','100'),0);
+assert.equal(achievement('10','0'),null);
+assert.equal(achievement('','100'),null);
+assert.equal(achievement('924000','1000000'),92.4);
+assert.equal(closingMessage(55800,'issue','후문 확인 필요',92.4,true),'마감 특이사항: 후문 확인 필요\n명일 이체금액 55,800원입니다.\n오늘 달성률 92.4%입니다.');
+console.log('PASS entered transfer amount, missing/zero/invalid amounts, report text and achievement');

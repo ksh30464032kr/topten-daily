@@ -1,0 +1,11 @@
+import {strict as assert} from 'node:assert';
+import {categories,legacy,candidates,consensus,inspectCode,validation} from '../services/ocr/validation.mjs';
+import {briefing,dateWord} from '../lib/briefing.mjs';
+for(const c of [...Object.keys(categories),...legacy])assert.ok(inspectCode('MSG4'+c+'1400').known);
+assert.equal(inspectCode('MSG4WG1400').known,false);assert.ok(candidates('MSG4WG1400').includes('MSG4WC1400'));assert.ok(candidates('MSG4WG1400').includes('MSG4WD1400'));assert.ok(candidates('MSG4WC14O0').includes('MSG4WC1400'));assert.ok(candidates('MSG4JP2403').includes('MSG4KP2403'));assert.equal(inspectCode('MSG4JP2403').legacy,true);
+const row={code:'MSG4WC1400',rank:1,quantity:3,amount:99091,agreement:2,confidence:92,disagreement:false},p={status:'found',name:'루즈핏 셔츠',price:19900};
+assert.equal(validation(row,p).verified,true);assert.equal(validation({...row,disagreement:true},p).verified,false);assert.equal(validation({...row,agreement:1},p).verified,false);assert.equal(validation(row,{...p,name:'데님 팬츠'}).verified,false);assert.equal(validation(row,{status:'error'}).verified,false);assert.equal(validation(row,{...p,stale:true}).verified,false);assert.equal(validation({...row,confidence:20,approved:true},p).verified,true);
+const readings=[{code:row.code,confidence:90},{code:row.code,confidence:85},{code:'MSG4WC14O0',confidence:80}];assert.equal(consensus(readings).agreement,2);assert.equal(consensus(readings).disagreement,true);
+const now=new Date('2026-10-03T15:30:00Z');assert.equal(dateWord('2026-10-04',now),'금일');assert.equal(dateWord('2026-10-03',now),'전일');assert.equal(dateWord('2026-09-30',now),'2026-09-30');assert.equal(dateWord('',now),'');
+const text=briefing(row,p,{location:'남성존',display:'행거 진열'},'2026-10-03','우리 매장',now);for(const phrase of ['전일','19,900원','3PCS','99,091원','남성존','행거 진열'])assert.ok(text.includes(phrase));const missing=briefing(row,{}, {},'','전국',now);assert.ok(!missing.includes('undefined'));assert.ok(!missing.includes('3PCS'));assert.ok(!missing.includes('금일'));assert.ok(text.split('.').filter(Boolean).length<=4);
+console.log('PASS dictionary, legacy, candidate-only corrections, fail-safe, category mismatch, stale/error, KST date, missing facts and 4-sentence briefing');

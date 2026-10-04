@@ -1,0 +1,3 @@
+import sharp from 'sharp';import {createWorker,PSM} from 'tesseract.js';
+const file=process.argv[2];const w=await createWorker('eng',1,{langPath:'./public/ocr',cachePath:'../../work'});await w.setParameters({tessedit_pageseg_mode:PSM.SINGLE_LINE,tessedit_char_whitelist:'0123456789,',user_defined_dpi:'300'});
+for(const left of [390,336])for(const inset of [0,1,2])for(const extra of [0,1,2]){let img=await sharp(file).extract({left:left+inset,top:371,width:(left===390?72:54)-inset+extra,height:19}).resize({width:300}).flatten({background:'#fff'}).normalize().extend({left:20,right:20,top:20,bottom:20,background:'#fff'}).png().toBuffer();const r=(await w.recognize(img)).data;console.log({left,inset,extra,text:r.text,confidence:r.confidence});}await w.terminate();
