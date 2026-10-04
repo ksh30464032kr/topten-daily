@@ -38,38 +38,23 @@ class RankingTests(unittest.TestCase):
         exec(compile(ast.Module(body=[handler], type_ignores=[]), str(source), 'exec'), env)
         return env['report'](), reads, codes
 
-    def test_sorted_fast_code_path(self):
-        result, reads, codes = self.run_report([9, 8, 7, 6, 5, 4, 3, 2])
+    def test_preserves_printed_order_despite_larger_later_quantities(self):
+        result, reads, codes = self.run_report([1, 4, 3, 4, 2, 99, None, 8])
         self.assertEqual([r['code'] for r in result['storeRanking']], codes[:5])
-        self.assertEqual(reads, [0, 1, 2, 3, 4])
-
-    def test_unsorted_late_best_and_stable_ties(self):
-        result, reads, codes = self.run_report([1, 4, 3, 4, 2, 9, 8, 4])
-        self.assertEqual([r['code'] for r in result['storeRanking']], [codes[i] for i in [5, 6, 1, 3, 7]])
+        self.assertEqual([r['quantity'] for r in result['storeRanking']], [1, 4, 3, 4, 2])
         self.assertEqual([r['rank'] for r in result['storeRanking']], [1, 2, 3, 4, 5])
-        self.assertEqual(len(reads), 5)
-
-    def test_ascending(self):
-        result, _, _ = self.run_report([1, 2, 3, 4, 5, 6, 7])
-        self.assertEqual([r['quantity'] for r in result['storeRanking']], [7, 6, 5, 4, 3])
-
-    def test_total_and_blank_excluded(self):
-        result, _, _ = self.run_report([99, 9, 8, 7, 6, 5, None], invalid=(0, 6))
-        self.assertEqual([r['quantity'] for r in result['storeRanking']], [9, 8, 7, 6, 5])
-
-    def test_unreadable_product_quantity_fails(self):
-        result, _, _ = self.run_report([9, 8, 7, 6, 5, None])
-        self.assertEqual(result[1], 400)
-
-    def test_blank_rows_need_no_ocr(self):
-        result, reads, _ = self.run_report([9, 8, 7, 6, 5, None, None], blank=(5, 6))
-        self.assertEqual(len(result['storeRanking']), 5)
         self.assertEqual(reads, [0, 1, 2, 3, 4])
 
-    def test_too_few_products_fails(self):
-        result, _, _ = self.run_report([9, 8, 7, 6, 5], invalid=(4,))
-        self.assertEqual(result[1], 400)
+    def test_unreadable_quantity_does_not_change_rank(self):
+        result, reads, codes = self.run_report([9, None, 7, 6, 5, 99])
+        self.assertEqual([r['code'] for r in result['storeRanking']], codes[:5])
+        self.assertIsNone(result['storeRanking'][1]['quantity'])
+        self.assertFalse(result['storeRanking'][1]['numericConfirmed'])
 
+    def test_missing_top_row_is_not_replaced_by_lower_row(self):
+        result, reads, _ = self.run_report([9, 8, 7, 6, 5, 99], blank=(2,))
+        self.assertEqual(result[1], 400)
+        self.assertNotIn(5, reads)
 
 if __name__ == '__main__':
     unittest.main()

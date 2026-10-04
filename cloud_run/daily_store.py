@@ -91,7 +91,7 @@ def validate_document(data):
         clean.append({'code': code, 'quantity': quantity, 'rankConfirmed': True, 'numericConfirmed': True})
     if len({r['code'] for r in clean}) != 5:
         raise ValueError('같은 품번을 중복 입력할 수 없습니다.')
-    clean.sort(key=lambda row: row['quantity'], reverse=True)
+    # Preserve the administrator's printed sales-revenue ranking.
     for rank, row in enumerate(clean, 1):
         row['rank'] = rank
     target = data.get('targetAmount')

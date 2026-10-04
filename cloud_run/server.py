@@ -586,50 +586,26 @@ def report():
         if start + 5 >= len(ys):
             raise ValueError('Could not find five local-store TOP rows.')
 
-        candidates = []
-        for i in range(start, len(ys) - 1):
+        # The printed order is the sales-revenue ranking. Read exactly its
+        # first five product rows; quantities are displayed, never used to sort.
+        rows = []
+        for rank, i in enumerate(range(start, start + 5), 1):
             y1, y2 = ys[i], ys[i + 1]
-
-            # Only the two fields the app actually needs.
             cr = rect_from_bounds(*grid['code'], y1, y2)
             qr = rect_from_bounds(*grid['quantity'], y1, y2)
-
-            # Blank trailing rows are not products. Do not run the many OCR
-            # variants on an empty cell (or on a zero-sized crop).
             code_crop = crop_cell(img, cr)
             if not cell_has_content(code_crop):
-                continue
+                raise ValueError('상단 5개 행에 빈 품번이 있습니다. 사진을 확인하거나 직접 입력해 주세요.')
+            code = recognize_code(code_crop)
+            if not CODE_RE.fullmatch(code.get('code', '')):
+                raise ValueError('상단 5개 품번을 읽지 못했습니다. 사진을 확인하거나 직접 입력해 주세요.')
             qty_crop = crop_quantity_cell(img, qr)
             qty, qreads = recognize_quantity(qty_crop) if cell_has_content(qty_crop) else (None, [])
-            if qty is None:
-                # An unreadable product quantity could change the TOP5. Never
-                # silently treat it as zero; blank/footer rows are not products.
-                code = recognize_code(code_crop)
-                if CODE_RE.fullmatch(code.get('code', '')):
-                    raise ValueError('판매수량을 읽지 못한 상품이 있습니다. 더 선명한 원본 사진으로 다시 올려 주세요.')
-                continue
-            candidates.append({
-                'rect': cr,
-                'quantity': qty,
-                'numericConfirmed': True,
-                'quantityRect': qr,
-                'quantityReadings': qreads,
+            rows.append({
+                **code, 'rank': rank, 'rankConfirmed': True,
+                'rect': cr, 'quantity': qty, 'numericConfirmed': qty is not None,
+                'quantityRect': qr, 'quantityReadings': qreads,
             })
-
-        # Stable sorting preserves the printed order for tied quantities.
-        # Read product codes only until five valid products have been found,
-        # avoiding expensive code OCR on every lower-selling row.
-        candidates.sort(key=lambda row: row['quantity'], reverse=True)
-        rows = []
-        for candidate in candidates:
-            code = recognize_code(crop_cell(img, candidate['rect']))
-            if not CODE_RE.fullmatch(code.get('code', '')):
-                continue  # Exclude totals, headers, and empty cells.
-            rows.append({**candidate, **code, 'rank': len(rows) + 1, 'rankConfirmed': True})
-            if len(rows) == 5:
-                break
-        if len(rows) < 5:
-            raise ValueError('품번과 판매수량을 확인할 수 있는 상품이 5개 미만입니다. 표 전체가 선명하게 보이는 사진으로 다시 올려 주세요.')
 
         # No date/store/amount OCR. Keep empty metadata only for Report type compatibility.
         return jsonify({

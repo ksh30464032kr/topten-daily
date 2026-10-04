@@ -39,7 +39,7 @@ class DailyTests(unittest.TestCase):
             response = self.client.put('/api/daily/' + daily_store.today(), json=self.payload, headers=self.login())
             self.assertEqual(response.status_code, 200)
             other = self.client.application.test_client().get('/api/daily/today').json['report']
-            self.assertEqual(other['storeRanking'][0]['quantity'], 4)
+            self.assertEqual([r['quantity'] for r in other['storeRanking']], [0, 1, 2, 3, 4])
             self.assertEqual(other['targetAmount'], 1_000_000)
             self.assertTrue(other['targetConfirmed'])
 
