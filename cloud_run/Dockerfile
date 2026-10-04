@@ -26,12 +26,14 @@ RUN python -m pip install --upgrade "pip<26" "setuptools<82" wheel \
     && python -c "import paddle; print('Paddle OK:', paddle.__version__); paddle.utils.run_check()" \
     && python -c "import pyclipper, scipy, skimage; print('deps OK:', pyclipper.__version__, scipy.__version__, skimage.__version__)"
 
-COPY server.py .
+COPY server.py daily_store.py target_ocr.py test_daily.py ./
+RUN python -m unittest test_daily
 
 # Instantiate the exact production model at build time. Its downloaded weights
 # stay in /root/.paddleocr in the image instead of downloading on every cold start.
 # Importing the app also catches duplicate Flask routes before deployment.
 RUN python -c "import server; c=server.app.test_client(); assert c.get('/healthz').status_code == 200; assert c.get('/').status_code == 200; print('OCR models cached; Flask startup verified')"
+RUN python -c "from target_ocr import model; model(); print('Target OCR model cached')"
 
 ENV PORT=8080
 

@@ -12,6 +12,8 @@ from paddleocr import PaddleOCR
 
 app = Flask(__name__)
 CORS(app)
+from daily_store import register_daily_routes, is_admin
+register_daily_routes(app)
 
 print('[TOPTEN OCR] Loading OCR models. First launch can take a few minutes.', flush=True)
 # English recognition is much better for TOPTEN's uppercase alphanumeric product codes.
@@ -655,6 +657,19 @@ def cell():
     except Exception as e:
         traceback.print_exc()
         return jsonify({'error': str(e)}), 400
+
+
+@app.post('/ocr/target')
+def target_amount():
+    if not is_admin():
+        return jsonify({'error': '관리자 로그인이 필요합니다.'}), 401
+    try:
+        from target_ocr import read_target
+        img, _ = image_from_request()
+        return jsonify(read_target(img))
+    except Exception:
+        traceback.print_exc()
+        return jsonify({'targetAmount': None, 'targetHint': '목표액을 읽지 못했습니다. 직접 입력해 주세요.'})
 
 
 if __name__ == '__main__':

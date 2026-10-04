@@ -14,7 +14,7 @@ export function warmup():Promise<void>{
     try{
       const res=await fetch(OCR_URL+'/health',{cache:'no-store',signal:AbortSignal.timeout(90_000)});
       if(!res.ok)throw Error();
-      const data=await res.json();
+      const data=await res.json() as {ok?:boolean};
       if(data.ok!==true)throw Error();
       readyAt=Date.now();
     }catch{throw Error('OCR 서버를 준비하지 못했습니다. 잠시 후 다시 시도해 주세요.');}

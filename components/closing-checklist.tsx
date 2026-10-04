@@ -2,9 +2,10 @@
 import {useEffect,useRef,useState} from 'react';
 import {Check,Copy,ClipboardCheck} from 'lucide-react';
 import {achievement,closingMessage} from '../lib/closing';
+import {fetchDaily} from '../lib/daily';
 
 const KEY='topten.closing.v1';
-type Day={checks:Record<string,boolean>;transfer:string;sales:string;target:string;status:string;issue:string;includeRate:boolean};
+type Day={checks:Record<string,boolean>;transfer:string;sales:string;target:string;status:string;issue:string;includeRate:boolean;targetFromShared?:string};
 const blank=():Day=>({checks:{},transfer:'',sales:'',target:'',status:'',issue:'',includeRate:false});
 const today=()=>new Intl.DateTimeFormat('sv-SE',{timeZone:'Asia/Seoul',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());
 const steps=[
@@ -32,19 +33,35 @@ export default function ClosingChecklist(){
  function jumpToFirst(){if(!firstUnchecked)return;const target=itemRefs.current[firstUnchecked];if(!target)return;const header=document.querySelector('header');const offset=(header?.getBoundingClientRect().height||0)+16;window.scrollTo({top:Math.max(0,window.scrollY+target.getBoundingClientRect().top-offset),behavior:window.matchMedia('(prefers-reduced-motion: reduce)').matches?'instant':'smooth'});target.focus({preventScroll:true});setHighlight(firstUnchecked);if(highlightTimer.current)clearTimeout(highlightTimer.current);highlightTimer.current=setTimeout(()=>setHighlight(''),1800);}
  function resetDay(){setResetting(false);update(blank());setWanInputs(prev=>Object.fromEntries(Object.entries(prev).filter(([key])=>!key.startsWith(date))));setNotice('선택한 날짜의 마감 기록을 초기화했어요.');}
  const [wanInputs,setWanInputs]=useState<Record<string,string>>({});
+ useEffect(()=>{
+  if(!loaded||!date)return;
+  let stopped=false;
+  fetchDaily(date).then(({report})=>{
+   if(stopped||!report?.targetConfirmed||!report.targetAmount)return;
+   const amount=String(report.targetAmount);
+   setDays(previous=>{
+    const current={...blank(),...previous[date]};
+    if(current.target!==''&&current.target!==current.targetFromShared)return previous;
+    const next={...previous,[date]:{...current,target:amount,targetFromShared:amount}};
+    try{localStorage.setItem(KEY,JSON.stringify(next));}catch{setStorageError('자동 입력된 목표액을 기기에 저장하지 못했습니다.');}
+    return next;
+   });
+  }).catch(()=>{});
+  return()=>{stopped=true;};
+ },[loaded,date]);
  function wanValue(field:'sales'|'target'){return wanInputs[date+field]??(day[field]===''?'':String(Number(day[field])/10000));}
  function updateWan(field:'sales'|'target',value:string){if(!/^\d{0,6}(\.\d{0,4})?$/.test(value))return;setWanInputs(prev=>({...prev,[date+field]:value}));update({[field]:value===''||value==='.'?'':String(Math.round(Number(value)*10000))});}
  const message=closingMessage(day.transfer===''?null:Number(day.transfer),day.status,day.issue,rate,day.includeRate);
  function number(value:string,apply:(v:string)=>void,max=10){if(new RegExp(`^\\d{0,${max}}$`).test(value))apply(value);}
  async function copy(){try{await navigator.clipboard.writeText(message);setNotice('마감 보고를 복사했어요. 카톡에 붙여넣어 주세요.');}catch{reportText.current?.focus();reportText.current?.select();setNotice('복사가 제한되어 문구를 선택했어요. 길게 눌러 복사해 주세요.');}}
  return <section className="closing">
-  <div className="title-row"><div><h1>마감 체크리스트</h1><p className="subtitle">21:40부터, 순서대로 하나씩 확인하세요.</p></div><button className="closing-reset" disabled={!loaded} onClick={()=>setResetting(true)}>초기화</button></div>
+  <div className="title-row"><div><h1>1층 마감 체크리스트</h1><p className="subtitle">21:40부터, 순서대로 하나씩 확인하세요.</p></div><button className="closing-reset" disabled={!loaded} onClick={()=>setResetting(true)}>초기화</button></div>
   {resetting&&<div className="closing-warning" role="alertdialog" aria-label="마감 기록 초기화 확인"><p>{date}의 체크와 입력값을 모두 초기화할까요? 다른 날짜 기록은 유지됩니다.</p><button className="primary" onClick={resetDay}>초기화하기</button><button className="closing-reset" onClick={()=>setResetting(false)}>취소</button></div>}
   <div className="closing-overview"><label>마감 날짜<input aria-label="마감 날짜" type="date" value={date} onInput={e=>{const value=e.currentTarget.value;if(/^\d{4}-\d{2}-\d{2}$/.test(value))setDate(value);}} onChange={e=>{if(/^\d{4}-\d{2}-\d{2}$/.test(e.target.value))setDate(e.target.value);}}/></label><strong>{completed}<span> / {allIds.length} 완료</span></strong><progress aria-label="마감 진행률" max={allIds.length} value={completed}/><p>날짜별로 이 기기에 자동 저장 · 팀원 간 공유되지 않아요.</p>{date&&date!==today()&&<button onClick={()=>setDate(today())}>오늘 날짜로 돌아가기</button>}</div>
   {storageError&&<p className="closing-warning" role="alert">{storageError}</p>}
   {!loaded?<p role="status">마감 기록을 불러오는 중…</p>:steps.map((step,index)=><section className="closing-step" key={step.title}>
    <div className="closing-step-title"><span>{String(index+1).padStart(2,'0')}</span><div><h2>{step.title}</h2><p>{step.hint}</p></div><small>{step.items.filter(([id])=>day.checks[id]).length}/{step.items.length}</small></div>
-   {index===4&&<div className="closing-calculator"><h3>오늘 달성률</h3><div className="closing-fields"><label>당일 목표 (만원)<input inputMode="decimal" value={wanValue('target')} onChange={e=>updateWan('target',e.target.value)} placeholder="예: 100"/></label><label>당일 매출 (만원)<input inputMode="decimal" value={wanValue('sales')} onChange={e=>updateWan('sales',e.target.value)} placeholder="예: 92.4"/></label></div><p className="achievement">{rate===null?'목표와 매출을 입력하세요':`${rate.toFixed(1)}%`}<small>입력 단위: 만원 · 매출 ÷ 목표 × 100</small></p>{day.target!==''&&Number(day.target)===0&&<p className="closing-warning">목표는 0만원보다 큰 금액으로 입력하세요.</p>}</div>}
+   {index===4&&<div className="closing-calculator"><h3>오늘 달성률</h3>{day.targetFromShared&&day.target===day.targetFromShared&&<p className="muted">관리자가 확인한 오늘 목표액이 자동 입력됐어요.</p>}<div className="closing-fields"><label>당일 목표 (만원)<input inputMode="decimal" value={wanValue('target')} onChange={e=>updateWan('target',e.target.value)} placeholder="예: 100"/></label><label>당일 매출 (만원)<input inputMode="decimal" value={wanValue('sales')} onChange={e=>updateWan('sales',e.target.value)} placeholder="예: 92.4"/></label></div><p className="achievement">{rate===null?'목표와 매출을 입력하세요':`${rate.toFixed(1)}%`}<small>입력 단위: 만원 · 매출 ÷ 목표 × 100</small></p>{day.target!==''&&Number(day.target)===0&&<p className="closing-warning">목표는 0만원보다 큰 금액으로 입력하세요.</p>}</div>}
    {step.items.filter(([id])=>id!=='sent').map(([id,label])=><label key={id} ref={el=>{itemRefs.current[id]=el;}} tabIndex={-1} className={'closing-check '+(day.checks[id]?'done':'')+(highlight===id?' jump-highlight':'')}><input type="checkbox" checked={!!day.checks[id]} onChange={e=>update({checks:{...day.checks,[id]:e.target.checked}})}/><span>{label}</span>{day.checks[id]&&<Check size={16}/>}</label>)}
    {index===6&&<div className="closing-report"><label className="closing-transfer">명일 이체금액 (원)<input type="text" inputMode="numeric" value={day.transfer} onChange={e=>number(e.target.value,v=>update({transfer:v}))} placeholder="엑셀에서 확인한 금액"/><small>컴퓨터 엑셀로 정산한 최종 금액을 입력하세요.</small></label><fieldset><legend>마감 이상 여부</legend><label><input type="radio" name="closing-status" checked={day.status==='ok'} onChange={()=>update({status:'ok'})}/> 이상 없음</label><label><input type="radio" name="closing-status" checked={day.status==='issue'} onChange={()=>update({status:'issue'})}/> 특이사항 있음</label></fieldset>{day.status==='issue'&&<label className="closing-issue">특이사항<textarea value={day.issue} onChange={e=>update({issue:e.target.value})} placeholder="보고할 내용을 적어 주세요" maxLength={1000}/></label>}<label className="closing-check"><input type="checkbox" checked={day.includeRate} onChange={e=>update({includeRate:e.target.checked})}/><span>달성률도 보고에 포함</span></label><label className="closing-issue">보고 문구 미리보기<textarea ref={reportText} aria-label="마감 보고 문구" readOnly value={message} placeholder="이체금액과 마감 이상 여부를 입력하면 보고 문구가 완성돼요." rows={5}/></label><button className="primary copy-closing" disabled={!message} onClick={copy}><Copy size={18}/>마감 보고 복사</button><p className="muted">복사 후 카톡에 붙여넣어 전송하세요.{completed<allIds.length-1?' 아직 체크하지 않은 항목도 확인해 주세요.':''}</p><label ref={el=>{itemRefs.current.sent=el;}} tabIndex={-1} className={'closing-check '+(day.checks.sent?'done':'')+(highlight==='sent'?' jump-highlight':'')}><input type="checkbox" checked={!!day.checks.sent} onChange={e=>update({checks:{...day.checks,sent:e.target.checked}})}/><span>마감 보고 전송 완료</span></label></div>}
   </section>)}
