@@ -650,6 +650,21 @@ def target_amount():
         return jsonify({'targetAmount': None, 'targetHint': '목표액을 읽지 못했습니다. 직접 입력해 주세요.'})
 
 
+@app.post('/ocr/schedule')
+def schedule_image():
+    if not is_admin():
+        return jsonify({'error': '관리자 로그인이 필요합니다.'}), 401
+    try:
+        from schedule_ocr import read_schedule
+        img, _ = image_from_request()
+        return jsonify(read_schedule(img, ocr_code))
+    except ValueError as error:
+        return jsonify({'error': str(error)}), 400
+    except Exception:
+        traceback.print_exc()
+        return jsonify({'error': '시간표를 인식하지 못했습니다. 원본 사진을 확인하거나 직접 입력해 주세요.'}), 500
+
+
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', '8765'))
     app.run(host='0.0.0.0', port=port, debug=False, threaded=True)

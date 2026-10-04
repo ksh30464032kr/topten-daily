@@ -26,7 +26,7 @@ RUN python -m pip install --upgrade "pip<26" "setuptools<82" wheel \
     && python -c "import paddle; print('Paddle OK:', paddle.__version__); paddle.utils.run_check()" \
     && python -c "import pyclipper, scipy, skimage; print('deps OK:', pyclipper.__version__, scipy.__version__, skimage.__version__)"
 
-COPY server.py daily_store.py schedule_store.py target_ocr.py test_daily.py ./
+COPY server.py daily_store.py schedule_store.py schedule_ocr.py target_ocr.py test_daily.py ./
 RUN python -m unittest test_daily
 
 # Instantiate the exact production model at build time. Its downloaded weights
