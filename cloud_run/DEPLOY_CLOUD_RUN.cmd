@@ -42,6 +42,7 @@ call gcloud run deploy "%SERVICE%" ^
   --concurrency 1 ^
   --min-instances 0 ^
   --max-instances 2 ^
+  --startup-probe="httpGet.path=/healthz,httpGet.port=8080,timeoutSeconds=3,periodSeconds=5,failureThreshold=48" ^
   --timeout 300
 if errorlevel 1 goto ERROR
 

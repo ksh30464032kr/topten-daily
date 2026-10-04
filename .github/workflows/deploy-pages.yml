@@ -33,6 +33,8 @@ jobs:
         run: node -e "const u = new URL(process.env.NEXT_PUBLIC_API_BASE); if (u.protocol !== 'https:') throw Error('API_BASE_URL must use HTTPS')"
       - name: Install
         run: npm ci
+      - name: Test OCR connection handling
+        run: node scripts/test-ocr-connection.mjs
       - name: Build static site
         run: npm run build
       - name: Verify Pages artifact

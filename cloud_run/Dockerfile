@@ -2,7 +2,10 @@ FROM paddlepaddle/paddle:2.6.2
 
 ENV PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1 \
-    DEBIAN_FRONTEND=noninteractive
+    DEBIAN_FRONTEND=noninteractive \
+    OMP_NUM_THREADS=2 \
+    OPENBLAS_NUM_THREADS=2 \
+    MKL_NUM_THREADS=2
 
 WORKDIR /app
 
@@ -25,8 +28,11 @@ RUN python -m pip install --upgrade "pip<26" "setuptools<82" wheel \
 
 COPY server.py .
 
-RUN python -c "from paddleocr import PaddleOCR; print('PaddleOCR import OK')"
+# Instantiate the exact production model at build time. Its downloaded weights
+# stay in /root/.paddleocr in the image instead of downloading on every cold start.
+# Importing the app also catches duplicate Flask routes before deployment.
+RUN python -c "import server; c=server.app.test_client(); assert c.get('/healthz').status_code == 200; assert c.get('/').status_code == 200; print('OCR models cached; Flask startup verified')"
 
 ENV PORT=8080
 
-CMD ["sh", "-c", "gunicorn --bind 0.0.0.0:${PORT} --workers 1 --threads 4 --timeout 300 server:app"]
+CMD ["sh", "-c", "exec gunicorn --bind 0.0.0.0:${PORT} --workers 1 --threads 1 --timeout 300 --access-logfile - server:app"]

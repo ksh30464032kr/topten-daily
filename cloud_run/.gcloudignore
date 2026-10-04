@@ -1,0 +1,6 @@
+.gcloudignore
+.git
+__pycache__/
+*.pyc
+cloud-run-url.txt
+DEPLOY_CLOUD_RUN.cmd

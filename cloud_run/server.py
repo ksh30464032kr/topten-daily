@@ -484,11 +484,6 @@ def rect_from_bounds(x1, x2, y1, y2):
     return {'left': int(x1), 'top': int(y1), 'width': int(x2 - x1), 'height': int(y2 - y1)}
 
 
-@app.get('/')
-def root():
-    return '<h2>TOPTEN OCR is running.</h2><p>Open the TOPTEN website at <b>http://localhost:3000</b>.</p>'
-
-
 @app.get('/health')
 def health():
     return jsonify({'ok': True, 'engine': 'PaddleOCR', 'codeModel': 'en', 'metaModel': 'korean'})
