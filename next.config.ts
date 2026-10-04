@@ -8,7 +8,8 @@ const basePath = onGitHub && repo && !isUserSite ? `/${repo}` : "";
 const nextConfig: NextConfig = {
   output: "export",
   trailingSlash: true,
-  basePath,
+  // Vinext beta.5 prerenders route URLs without basePath. Keep the router
+  // rooted at / and prefix only static assets for this single-page app.
   assetPrefix: basePath,
   images: { unoptimized: true },
 };

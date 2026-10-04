@@ -11,103 +11,36 @@ permissions:
   id-token: write
 
 concurrency:
-  group: "pages"
+  group: pages
   cancel-in-progress: false
 
 jobs:
   build:
     runs-on: ubuntu-latest
-
+    env:
+      NEXT_PUBLIC_API_BASE: ${{ vars.API_BASE_URL }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: npm
-
       - name: Configure Pages
         uses: actions/configure-pages@v5
-
       - name: Check API URL
-        shell: bash
-        run: |
-          if [ -z "${{ vars.API_BASE_URL }}" ]; then
-            echo "API_BASE_URL repository variable is missing."
-            exit 1
-          fi
-          echo "API_BASE_URL is configured."
-
+        run: node -e "const u = new URL(process.env.NEXT_PUBLIC_API_BASE); if (u.protocol !== 'https:') throw Error('API_BASE_URL must use HTTPS')"
       - name: Install
         run: npm ci
-
       - name: Build static site
-        env:
-          NEXT_PUBLIC_API_BASE: ${{ vars.API_BASE_URL }}
         run: npm run build
-
-      # Vinext static export + basePath can place the home page under
-      # dist/client/<repository>/index.html. GitHub Pages project sites,
-      # however, require index.html at the ROOT of the uploaded artifact.
-      # This step normalizes both layouts and deliberately fails if no
-      # entry page exists, so a green workflow can no longer publish a 404.
-      - name: Prepare Pages artifact
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          REPO_NAME="${GITHUB_REPOSITORY#*/}"
-          CLIENT_DIR="dist/client"
-          OUT_DIR="pages-out"
-
-          echo "Repository: ${REPO_NAME}"
-          echo "Inspecting ${CLIENT_DIR}:"
-          find "${CLIENT_DIR}" -maxdepth 3 -type f | sort | head -n 200 || true
-
-          rm -rf "${OUT_DIR}"
-          mkdir -p "${OUT_DIR}"
-
-          # Keep every generated static asset.
-          cp -a "${CLIENT_DIR}/." "${OUT_DIR}/"
-
-          # With basePath=/REPO_NAME, Vinext may emit the site inside a
-          # REPO_NAME subdirectory. Overlay that directory at artifact root.
-          if [ -d "${CLIENT_DIR}/${REPO_NAME}" ]; then
-            echo "Found basePath directory: ${CLIENT_DIR}/${REPO_NAME}"
-            cp -a "${CLIENT_DIR}/${REPO_NAME}/." "${OUT_DIR}/"
-          fi
-
-          # Final fallback: locate the prerendered home page and expose it
-          # as the Pages artifact root entry file.
-          if [ ! -f "${OUT_DIR}/index.html" ]; then
-            INDEX_FILE="$(find "${CLIENT_DIR}" -type f -name index.html | head -n 1 || true)"
-            if [ -n "${INDEX_FILE}" ]; then
-              echo "Using fallback index: ${INDEX_FILE}"
-              cp "${INDEX_FILE}" "${OUT_DIR}/index.html"
-            fi
-          fi
-
-          if [ ! -f "${OUT_DIR}/index.html" ]; then
-            echo "ERROR: No index.html was generated."
-            echo "The workflow is stopping instead of publishing a broken 404 site."
-            exit 1
-          fi
-
-          touch "${OUT_DIR}/.nojekyll"
-
-          # Friendly fallback for direct navigation on a static Pages host.
-          cp "${OUT_DIR}/index.html" "${OUT_DIR}/404.html"
-
-          echo "Final Pages artifact:"
-          find "${OUT_DIR}" -maxdepth 2 -type f | sort | head -n 200
-          echo "index.html verified."
-
+      - name: Verify Pages artifact
+        run: node scripts/verify-pages.mjs
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v4
         with:
-          path: pages-out
+          path: dist/client
 
   deploy:
     environment:
@@ -115,7 +48,6 @@ jobs:
       url: ${{ steps.deployment.outputs.page_url }}
     runs-on: ubuntu-latest
     needs: build
-
     steps:
       - name: Deploy to GitHub Pages
         id: deployment
