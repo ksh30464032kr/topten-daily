@@ -12,7 +12,7 @@ export function warmup():Promise<void>{
   if(warming)return warming;
   warming=(async()=>{
     try{
-      const res=await fetch(OCR_URL+'/healthz',{cache:'no-store',signal:AbortSignal.timeout(90_000)});
+      const res=await fetch(OCR_URL+'/health',{cache:'no-store',signal:AbortSignal.timeout(90_000)});
       if(!res.ok)throw Error();
       const data=await res.json();
       if(data.ok!==true)throw Error();
