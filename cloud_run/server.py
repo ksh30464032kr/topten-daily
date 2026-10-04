@@ -580,29 +580,45 @@ def report():
         if start + 5 >= len(ys):
             raise ValueError('Could not find five local-store TOP rows.')
 
-        rows = []
-        for rank in range(1, 6):
-            i = start + rank - 1
+        candidates = []
+        for i in range(start, len(ys) - 1):
             y1, y2 = ys[i], ys[i + 1]
 
             # Only the two fields the app actually needs.
             cr = rect_from_bounds(*grid['code'], y1, y2)
             qr = rect_from_bounds(*grid['quantity'], y1, y2)
 
-            code = recognize_code(crop_cell(img, cr))
             qty_crop = crop_quantity_cell(img, qr)
             qty, qreads = recognize_quantity(qty_crop)
-
-            rows.append({
-                **code,
-                'rank': rank,
-                'rankConfirmed': True,
+            if qty is None:
+                # An unreadable product quantity could change the TOP5. Never
+                # silently treat it as zero; blank/footer rows are not products.
+                code = recognize_code(crop_cell(img, cr))
+                if CODE_RE.fullmatch(code.get('code', '')):
+                    raise ValueError('판매수량을 읽지 못한 상품이 있습니다. 더 선명한 원본 사진으로 다시 올려 주세요.')
+                continue
+            candidates.append({
                 'rect': cr,
                 'quantity': qty,
-                'numericConfirmed': qty is not None,
+                'numericConfirmed': True,
                 'quantityRect': qr,
                 'quantityReadings': qreads,
             })
+
+        # Stable sorting preserves the printed order for tied quantities.
+        # Read product codes only until five valid products have been found,
+        # avoiding expensive code OCR on every lower-selling row.
+        candidates.sort(key=lambda row: row['quantity'], reverse=True)
+        rows = []
+        for candidate in candidates:
+            code = recognize_code(crop_cell(img, candidate['rect']))
+            if not CODE_RE.fullmatch(code.get('code', '')):
+                continue  # Exclude totals, headers, and empty cells.
+            rows.append({**candidate, **code, 'rank': len(rows) + 1, 'rankConfirmed': True})
+            if len(rows) == 5:
+                break
+        if len(rows) < 5:
+            raise ValueError('품번과 판매수량을 확인할 수 있는 상품이 5개 미만입니다. 표 전체가 선명하게 보이는 사진으로 다시 올려 주세요.')
 
         # No date/store/amount OCR. Keep empty metadata only for Report type compatibility.
         return jsonify({

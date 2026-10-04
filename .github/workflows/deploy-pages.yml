@@ -35,6 +35,8 @@ jobs:
         run: npm ci
       - name: Test OCR connection handling
         run: node scripts/test-ocr-connection.mjs
+      - name: Test OCR quantity ranking
+        run: python3 scripts/test-ocr-ranking.py
       - name: Build static site
         run: npm run build
       - name: Verify Pages artifact
