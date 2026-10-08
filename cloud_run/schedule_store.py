@@ -1,4 +1,8 @@
 import re
+import base64
+import binascii
+from io import BytesIO
+from PIL import Image, ImageOps, UnidentifiedImageError
 from datetime import datetime
 from flask import jsonify, request
 from daily_store import is_admin, read_day, write_day, today
@@ -18,6 +22,27 @@ def minutes(value):
 def validate_schedule(date, data):
     if not valid_date(date) or data.get('date') != date:
         raise ValueError('시간표 날짜를 확인해 주세요.')
+    if 'photo' in data:
+        photo = data['photo']
+        if not isinstance(photo, str) or len(photo) > 8 * 1024 * 1024:
+            raise ValueError('사진 용량을 줄여 다시 등록해 주세요.')
+        try:
+            header, encoded = photo.split(',', 1)
+            if header not in ('data:image/jpeg;base64', 'data:image/png;base64', 'data:image/webp;base64'):
+                raise ValueError()
+            raw = base64.b64decode(encoded, validate=True)
+            with Image.open(BytesIO(raw)) as source:
+                if source.width * source.height > 24_000_000 or min(source.size) < 100:
+                    raise ValueError()
+                source.load()
+                image = ImageOps.exif_transpose(source).convert('RGB')
+                image.thumbnail((4000, 4000))
+                output = BytesIO()
+                image.save(output, format='JPEG', quality=94)
+            photo = 'data:image/jpeg;base64,' + base64.b64encode(output.getvalue()).decode('ascii')
+        except (ValueError, OSError, binascii.Error, UnidentifiedImageError, Image.DecompressionBombError):
+            raise ValueError('유효한 시간표 사진을 선택해 주세요.')
+        return {'date': date, 'photo': photo, 'staff': [], 'updatedAt': datetime.now().astimezone().isoformat()}
     staff = data.get('staff')
     if not isinstance(staff, list) or not 1 <= len(staff) <= 50:
         raise ValueError('근무자를 1명 이상 입력해 주세요.')
@@ -66,6 +91,7 @@ def register_schedule_routes(app):
     def schedule_put(date):
         if not is_admin():
             return jsonify({'error': '관리자 로그인이 필요합니다.'}), 401
+        request.max_content_length = 9 * 1024 * 1024
         data = request.get_json(silent=True) or {}
         try:
             document = validate_schedule(date, data)
