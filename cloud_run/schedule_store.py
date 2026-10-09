@@ -73,16 +73,25 @@ def validate_schedule(date, data):
 
 
 def register_schedule_routes(app):
+    def schedule_prefix(date):
+        period = request.args.get('period', 'daily')
+        if period not in ('daily', 'weekly'):
+            raise ValueError('시간표 종류를 확인해 주세요.')
+        if period == 'weekly' and datetime.strptime(date, '%Y-%m-%d').weekday() != 0:
+            raise ValueError('주간표는 월요일 날짜로 등록해 주세요.')
+        return 'weekly-schedules' if period == 'weekly' else 'schedules'
+
     @app.get('/api/schedule/<date>')
     def schedule_get(date):
         date = today() if date == 'today' else date
         try:
             if not valid_date(date):
                 raise ValueError()
+            prefix = schedule_prefix(date)
         except ValueError:
             return jsonify({'error': '날짜를 확인해 주세요.'}), 400
         try:
-            return jsonify({'date': date, 'schedule': read_day(date, 'schedules')}), 200, {'Cache-Control': 'no-store'}
+            return jsonify({'date': date, 'schedule': read_day(date, prefix)}), 200, {'Cache-Control': 'no-store'}
         except Exception:
             app.logger.exception('Schedule read failed')
             return jsonify({'error': '시간표를 불러오지 못했습니다.'}), 503
@@ -95,10 +104,11 @@ def register_schedule_routes(app):
         data = request.get_json(silent=True) or {}
         try:
             document = validate_schedule(date, data)
+            prefix = schedule_prefix(date)
             revision = str(data.get('revision') or '0')
             if not revision.isdigit():
                 raise ValueError('시간표를 다시 열어 주세요.')
-            return jsonify({'schedule': write_day(date, document, revision, 'schedules')})
+            return jsonify({'schedule': write_day(date, document, revision, prefix)})
         except ValueError as error:
             return jsonify({'error': str(error)}), 409 if '다른 관리자' in str(error) else 400
         except Exception:

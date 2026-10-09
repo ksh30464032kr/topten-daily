@@ -1,5 +1,6 @@
 'use client';
 import {useEffect,useRef,useState} from 'react';
+import {parseDailyPaste,dailyPasteTemplate} from '../lib/daily-paste.mjs';
 import {X,Upload} from 'lucide-react';
 import type {Report} from '../lib/report';
 import {API_BASE,fetchDaily,today} from '../lib/daily';
@@ -10,6 +11,8 @@ const SESSION='topten.admin.session';
 
 export default function DailyEditor({mode,initial,onClose,onSave}:{mode:'admin'|'manual';initial:Report|null;onClose:()=>void;onSave:(report:Report)=>void}){
  const admin=mode==='admin';
+ const [paste,setPaste]=useState(''),[pasteHint,setPasteHint]=useState('');
+ function applyPaste(){try{const value=parseDailyPaste(paste,date);setRows(value.rows);setTarget(value.target);setConfirmed(false);setHint('');setError('');setPasteHint('입력칸에 반영했습니다. 빈칸과 목표금액을 확인한 뒤 공유 저장하세요.');}catch(e){setPasteHint(e instanceof Error?e.message:'붙여넣기 형식을 확인해 주세요.');}}
  const [token,setToken]=useState(''),[password,setPassword]=useState(''),[rows,setRows]=useState(()=>entries(initial));
  const [target,setTarget]=useState(initial?.targetAmount?String(initial.targetAmount/10000):''),[confirmed,setConfirmed]=useState(!!initial?.targetConfirmed);
  const [revision,setRevision]=useState('0'),[loaded,setLoaded]=useState(!admin),[busy,setBusy]=useState(false),[error,setError]=useState(''),[progress,setProgress]=useState(''),[hint,setHint]=useState('');
@@ -58,6 +61,7 @@ export default function DailyEditor({mode,initial,onClose,onSave}:{mode:'admin'|
   <div className="sheet-heading"><div><b>{admin?'오늘의 TOP5 관리':'TOP5 직접입력'}</b><small>{date} · {admin?'모든 기기에 공유':'이 기기에서 보기'}</small></div><button disabled={busy} onClick={onClose} aria-label="닫기"><X size={20}/></button></div>
   {admin&&!token?<form onSubmit={login} className="daily-form"><label>관리자 암호<input autoFocus type="password" autoComplete="current-password" value={password} onChange={e=>setPassword(e.target.value)}/></label><button className="primary" disabled={busy||!password}>{busy?'확인 중…':'관리자 열기'}</button></form>:<>
    {admin&&<><input ref={fileInput} type="file" accept="image/png,image/jpeg" className="sr-only" onChange={e=>scan(e.target.files?.[0])}/><button className="primary" disabled={busy||!loaded} onClick={()=>fileInput.current?.click()}><Upload size={16}/>사진으로 채우기</button><p className="muted">표 상단 5개 순서대로 확인하거나 직접 입력하세요.</p></>}
+   {admin&&<details className="daily-paste"><summary>GPT 결과 붙여넣기</summary><p>표 상단 5개 순서를 유지합니다. 금액은 원 단위, 불명확한 값은 ‘확인 필요’로 입력하세요.</p><textarea aria-label="GPT 인식 결과" rows={10} value={paste} disabled={busy||!loaded} placeholder={dailyPasteTemplate(date)} onChange={e=>{setPaste(e.target.value);setPasteHint('');}}/><div><button className="manual-entry" disabled={busy||!loaded} onClick={()=>{setPaste(dailyPasteTemplate(date));setPasteHint('양식을 채우거나 GPT 결과로 바꿔 넣으세요.');}}>빈 양식 넣기</button><button className="primary" disabled={busy||!loaded||!paste.trim()} onClick={applyPaste}>입력칸에 반영</button></div>{pasteHint&&<p role="status">{pasteHint}</p>}<small>자동 저장되지 않습니다. 아래 입력칸에서 수정할 수 있어요.</small></details>}
    <div className="daily-entries">{rows.map((row,i)=><div key={i}><span>{i+1}</span><input aria-label={`${i+1}번째 품번`} placeholder="MSG4TS2312" maxLength={10} value={row.code} disabled={busy} onChange={e=>setRows(rows.map((r,j)=>j===i?{...r,code:e.target.value.toUpperCase()}:r))}/><input aria-label={`${i+1}번째 판매수량`} placeholder="수량" inputMode="numeric" maxLength={5} value={row.quantity} disabled={busy} onChange={e=>{if(/^\d*$/.test(e.target.value))setRows(rows.map((r,j)=>j===i?{...r,quantity:e.target.value}:r));}}/></div>)}</div>
    {admin&&<div className="daily-form"><label>오늘 목표금액 (만원)<input inputMode="decimal" placeholder="예: 100 → 1,000,000원" value={target} disabled={busy} onChange={e=>{if(/^\d{0,7}(\.\d{0,4})?$/.test(e.target.value)){setTarget(e.target.value);setConfirmed(false);}}}/></label>{hint&&<small>{hint}</small>}{target!==''&&<label className="daily-confirm"><input type="checkbox" checked={confirmed} disabled={busy} onChange={e=>setConfirmed(e.target.checked)}/>{Number.isFinite(Number(target))?(Number(target)*10000).toLocaleString():'—'}원으로 확인했습니다</label>}<small>확인된 목표액만 1층 마감에 자동 입력됩니다. 모르면 비워 두세요.</small></div>}
    <button className="primary daily-save" disabled={busy||!loaded} onClick={save}>{busy?'처리 중…':admin?'오늘 TOP5 공유 저장':'입력 완료'}</button>

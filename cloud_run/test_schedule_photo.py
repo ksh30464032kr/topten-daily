@@ -34,6 +34,15 @@ class SchedulePhotoTests(unittest.TestCase):
             self.assertEqual(photo.size, (400, 200))
             self.assertEqual(data['staff'], [])
 
+    def test_weekly_storage_is_separate(self):
+        payload = {**self.payload, 'date': '2026-10-05'}
+        with patch('schedule_store.is_admin', return_value=True), patch('schedule_store.write_day', return_value=payload) as write, patch('schedule_store.read_day', return_value=payload) as read:
+            self.assertEqual(self.client.put('/api/schedule/2026-10-05?period=weekly', json=payload).status_code, 200)
+            self.assertEqual(write.call_args.args[3], 'weekly-schedules')
+            self.assertEqual(self.client.get('/api/schedule/2026-10-05?period=weekly').status_code, 200)
+            self.assertEqual(read.call_args.args[1], 'weekly-schedules')
+            self.assertEqual(self.client.put('/api/schedule/2026-10-08?period=weekly', json=self.payload).status_code, 400)
+
     def test_bad_image_and_conflict(self):
         with patch('schedule_store.is_admin', return_value=True), patch('schedule_store.write_day', side_effect=ValueError('다른 관리자가 먼저 수정했습니다.')):
             self.assertEqual(self.client.put('/api/schedule/2026-10-08', json={**self.payload, 'photo': 'data:image/jpeg;base64,bad'}).status_code, 400)
