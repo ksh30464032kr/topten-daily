@@ -27,7 +27,10 @@ async function preparePhoto(file:File):Promise<string>{
  }finally{URL.revokeObjectURL(url);}
 }
 export default function SchedulePanel({adminRequest}:{adminRequest:number}){
- const [period,setPeriod]=useState<Period>('daily');
+ const [period,setPeriod]=useState<Period>('daily'),[ready,setReady]=useState(false);
+ useEffect(()=>{try{if(localStorage.getItem('topten.schedule.period')==='weekly')setPeriod('weekly');}catch{}setReady(true);},[]);
+ useEffect(()=>{if(ready)try{localStorage.setItem('topten.schedule.period',period);}catch{}},[period,ready]);
+ if(!ready)return <p role="status">시간표 화면을 복원하는 중…</p>;
  return <><div className="schedule-period"><button aria-pressed={period==='daily'} onClick={()=>setPeriod('daily')}>일일 시간표</button><button aria-pressed={period==='weekly'} onClick={()=>setPeriod('weekly')}>주간표</button></div><PhotoSchedulePanel key={period} period={period} adminRequest={adminRequest}/></>;
 }
 function PhotoSchedulePanel({adminRequest,period}:{adminRequest:number;period:Period}){

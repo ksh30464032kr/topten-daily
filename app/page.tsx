@@ -3,6 +3,7 @@ import {lazy,Suspense,useEffect,useRef,useState} from 'react';
 import {Upload,Search,Sparkles,Star,Clock,Home,ScanLine,ArrowUpRight,X,Check,Copy,BookOpen,ChevronRight,ImageIcon,Plus,LoaderCircle,SlidersHorizontal,Store,Globe,ClipboardCheck} from 'lucide-react';
 import type {Product} from '../services/topten';
 import type {Row,Report} from '../lib/report';
+import {restorePageState} from '../lib/page-state.mjs';
 import LocationSearch from '../components/location-search';
 import ProductCard from '../components/product-card';
 import ReportReview from '../components/report-review';
@@ -33,7 +34,7 @@ export default function Page(){
  const logoTaps=useRef({count:0,at:0});
  const editorRef=useRef(editor);editorRef.current=editor;
  function logoClick(){const now=Date.now();logoTaps.current={count:now-logoTaps.current.at<2500?logoTaps.current.count+1:1,at:now};if(logoTaps.current.count>=5){if(view==='schedule')setScheduleAdmin(n=>n+1);else if(view==='search')setLocationAdmin(n=>n+1);else setEditor('admin');logoTaps.current.count=0;}else if(view!=='schedule'&&view!=='search')navigate('today');}
- function acceptReport(next:Report){setReport(next);setReports(prev=>[next,...prev.filter(r=>r.id!==next.id)].slice(0,90));setShowProducts(false);}
+ function acceptReport(next:Report){setReport(next);setReports(prev=>[next,...prev.filter(r=>r.id!==next.id)].slice(0,90));}
  function saveEditor(next:Report){acceptReport(next);setView('today');setToast(next.shared?'오늘 TOP5를 모든 기기에 공유했습니다.':'직접 입력한 TOP5를 저장했습니다.');}
  useEffect(()=>{
   if(!hydrated)return;
@@ -41,7 +42,7 @@ export default function Page(){
   const controller=new AbortController();
   async function sync(){
    if(editorRef.current)return;
-   const date=today();if(date===lastDate&&Date.now()-lastCheck<30_000)return;
+   const date=today();if(date!==lastDate)setShowProducts(false);if(date===lastDate&&Date.now()-lastCheck<30_000)return;
    lastDate=date;lastCheck=Date.now();
    setReport(prev=>prev?.date===date?prev:null);
    try{const result=await fetchDaily('today',AbortSignal.any([controller.signal,AbortSignal.timeout(45_000)]));if(stopped||editorRef.current||result.date!==today())return;if(result.report)acceptReport(result.report);setSharedError('');}
@@ -54,7 +55,9 @@ export default function Page(){
   window.addEventListener('focus',visible);document.addEventListener('visibilitychange',visible);
   return()=>{stopped=true;controller.abort();clearInterval(timer);window.removeEventListener('focus',visible);document.removeEventListener('visibilitychange',visible);};
  },[hydrated]);
- useEffect(()=>{const saved=read<Report[]>(HISTORY,[]);setReports(Array.isArray(saved)?saved:[]);setReport(Array.isArray(saved)?saved.find((r:Report)=>r.date===today())||null:null);setFavorites(read(FAVS,[]));productCache.current=read(CACHE,{});setProducts(productCache.current);setHydrated(true);},[]);
+ useEffect(()=>{const saved=read<Report[]>(HISTORY,[]);setReports(Array.isArray(saved)?saved:[]);setReport(Array.isArray(saved)?saved.find((r:Report)=>r.date===today())||null:null);setFavorites(read(FAVS,[]));productCache.current=read(CACHE,{});setProducts(productCache.current);const ui=restorePageState(read('topten.page.v1',null),today());setView(ui.view);setShowProducts(ui.showProducts);setQuery(ui.query);setSearched(ui.searched);setHydrated(true);},[]);
+ useEffect(()=>{if(!hydrated)return;try{localStorage.setItem('topten.page.v1',JSON.stringify({view,showProducts,query,searched,date:today()}));}catch{}},[hydrated,view,showProducts,query,searched]);
+ useEffect(()=>{if(hydrated&&view==='search'&&searched)void lookup(searched);},[hydrated,view,searched]);
  useEffect(()=>{if(!hydrated)return;try{localStorage.setItem(HISTORY,JSON.stringify(reports));}catch{setError('기기 저장 공간이 부족해 저장하지 못했습니다.');}},[reports,hydrated]);
  useEffect(()=>{if(!hydrated)return;try{localStorage.setItem(FAVS,JSON.stringify(favorites));}catch{setError('즐겨찾기를 저장하지 못했습니다.');}},[favorites,hydrated]);
  useEffect(()=>{if(!hydrated)return;const timer=setTimeout(()=>{try{localStorage.setItem(CACHE,JSON.stringify(products));}catch{}},300);return()=>clearTimeout(timer);},[products,hydrated]);
@@ -112,7 +115,7 @@ export default function Page(){
  async function directSearch(e?:React.FormEvent){e?.preventDefault();const code=query.trim().toUpperCase();if(!validCode(code)){setError('');setView('search');setSearched(null);setSearching(false);return;}setError('');setView('search');setSearched(code);setSearching(true);await lookup(code);setSearching(false);}
  function star(code:string){setFavorites(prev=>prev.includes(code)?prev.filter(x=>x!==code):[...prev,code]);}
  async function copy(code:string){try{await navigator.clipboard.writeText(code);setToast('복사되었습니다.');}catch{window.prompt('아래 내용을 길게 눌러 복사하세요.',code);}}
- function navigate(next:string){setView(next);setFilter('all');if(next==='today')setShowProducts(false);if(next==='search')searchInput.current?.focus();}
+ function navigate(next:string){setView(next);setFilter('all');if(next==='search')searchInput.current?.focus();}
  const local=report?.storeRanking.slice(0,5)||[];
  const dateBefore=report?new Date(Date.parse(report.date+'T12:00:00Z')-86400000).toISOString().slice(0,10):'';
  const previous=reports.find(r=>r.store===report?.store&&r.date===dateBefore);
