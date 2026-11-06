@@ -6,9 +6,7 @@ import type {Row,Report} from '../lib/report';
 import {restorePageState} from '../lib/page-state.mjs';
 import LocationSearch from '../components/location-search';
 import ProductCard from '../components/product-card';
-import ReportReview from '../components/report-review';
 import {validation} from '../services/ocr/validation.mjs';
-import {productStorage} from '../lib/product-storage';
 import {fetchDaily,today} from '../lib/daily';
 const Events=lazy(()=>import('../components/events'));
 const Locations=lazy(()=>import('../components/locations'));
@@ -67,51 +65,6 @@ export default function Page(){
  async function lookup(code:string,force=false){if(requests.current.has(code))return requests.current.get(code)!;const cached=productCache.current[code];const age=cached?Date.now()-Date.parse(cached.checkedAt):Infinity;if(!force&&cached&&((cached.status==='found'&&age<86400000)||(cached.status==='missing'&&age<300000)))return cached;
   const task=(async()=>{let p:Product;try{const controller=new AbortController();const timer=setTimeout(()=>controller.abort(),20000);try{const res=await fetch(API_BASE+'/api/products/'+encodeURIComponent(code)+(force?'?refresh=1':''),{signal:controller.signal,cache:force?'reload':'default'});if(!res.ok)throw Error();p=await res.json();}finally{clearTimeout(timer);}if(p.status==='error'&&cached?.status==='found')p={...cached,stale:true};}catch{p=cached?.status==='found'?{...cached,stale:true}:{code,status:'error',checkedAt:new Date().toISOString(),url:searchLink(code)};}productCache.current[code]=p;setProducts(prev=>({...prev,[code]:p}));return p;})();requests.current.set(code,task);try{return await task;}finally{requests.current.delete(code);}}
  async function retryProducts(){if(refreshing)return;setRefreshing(true);try{let next=0;const codes=[...new Set(codeRows.map(r=>r.code))];await Promise.all(Array.from({length:Math.min(5,codes.length)},async()=>{while(next<codes.length)await lookup(codes[next++],true);}));}finally{setRefreshing(false);}}
- async function loadProducts(r:Report){const codes=[...new Set(r.storeRanking.slice(0,5).map(x=>x.code))].filter(validCode);const map:Record<string,Product>={};let count=0;let next=0;await Promise.all(Array.from({length:Math.min(5,codes.length)},async()=>{while(next<codes.length){const code=codes[next++];map[code]=await lookup(code);setProgress(`TOPTEN 상품 확인 ${++count}/${codes.length}`);}}));return map;}
- async function upload(file?:File){
-  if(!file||busy)return;
-  setError('');
-  setDraft(null);
-  setDuplicate(false);
-  setBusy(true);
-  setShowProducts(false);
-  setView('today');
-  try{
-    const {analyze}=await import('../services/ocr/browser');
-    const result=await analyze(file,setProgress,setPreview);
-
-    // Date/store are no longer OCR targets. Keep simple internal values only
-    // so the existing Report type/history logic can continue to work.
-    const now=new Date();
-    const localDate=today();
-    const r:Report={
-      ...result,
-      date:localDate,
-      store:'우리매장',
-      id:crypto.randomUUID(),
-      createdAt:new Date().toISOString(),
-      products:{},
-      national:[],
-      storeRanking:(result.storeRanking||[]).slice(0,5)
-    };
-
-    setReport(r);
-    setReports(prev=>[r,...prev].slice(0,90));
-    setDraft(null);
-    setTab('storeRanking');
-    setFilter('all');
-    setProgress('');
-    setToast('TOP5 인식 완료');
-    void import('../services/ocr/browser').then(m=>m.release());
-  }catch(e){
-    setError(e instanceof Error?e.message:'리포트를 읽지 못했습니다. 다시 업로드해 주세요.');
-    setProgress('');
-  }finally{
-    setBusy(false);
-    if(input.current)input.current.value='';
-  }
-}
- async function saveDraft(replace=false){if(!draft)return;setError('');if(!draft.store.trim()||!/^\d{4}-\d{2}-\d{2}$/.test(draft.date)||Number.isNaN(Date.parse(draft.date))||new Date(draft.date+'T12:00:00Z').toISOString().slice(0,10)!==draft.date)return setError('날짜와 매장명을 확인해 주세요.');if([draft.storeRanking].some(rows=>rows.length!==5||rows.some(r=>!validCode(r.code))||new Set(rows.map(r=>r.code)).size!==5))return setError('각 순위의 품번 5개를 확인해 주세요. 빈 품번이나 같은 목록 안의 중복은 저장할 수 없습니다.');if(!replace&&reports.some(r=>r.date===draft.date&&r.store.trim()===draft.store.trim()))return setDuplicate(true);setBusy(true);try{const loaded=await loadProducts(draft);const finalize=(rows:Row[])=>rows.slice(0,5).map(row=>{try{if(row.originalCode)productStorage.remember(row.originalCode,row.code);}catch{}return {...row,verified:validation(row,loaded[row.code]).verified};});const current={...draft,national:[],storeRanking:finalize(draft.storeRanking),store:draft.store.trim(),products:loaded};void import('../services/ocr/browser').then(m=>m.release());const sorted=[current,...reports.filter(r=>!(r.date===current.date&&r.store===current.store))].sort((a,b)=>b.date.localeCompare(a.date));setReports(sorted.slice(0,90));setReport(current);setDraft(null);setDuplicate(false);setTab('storeRanking');setFilter('all');setToast('리포트가 이 기기에 저장되었습니다.');}finally{setBusy(false);setProgress('');}}
  async function directSearch(e?:React.FormEvent){e?.preventDefault();const code=query.trim().toUpperCase();if(!validCode(code)){setError('');setView('search');setSearched(null);setSearching(false);return;}setError('');setView('search');setSearched(code);setSearching(true);await lookup(code);setSearching(false);}
  function star(code:string){setFavorites(prev=>prev.includes(code)?prev.filter(x=>x!==code):[...prev,code]);}
  async function copy(code:string){try{await navigator.clipboard.writeText(code);setToast('복사되었습니다.');}catch{window.prompt('아래 내용을 길게 눌러 복사하세요.',code);}}
@@ -128,12 +81,11 @@ export default function Page(){
  const hasFailedProducts=codeRows.some(r=>product(r.code)?.status==='error');
  const activeCode=study?favorites[studyIndex%Math.max(favorites.length,1)]:modal;const activeProduct=activeCode?product(activeCode):undefined;
  return <><header className="header"><div className="header-inner"><button className="wordmark" onClick={logoClick}>TOPTEN<span>DAILY</span><i/></button><nav className="desktop-nav">{[['today','오늘'],['schedule','시간표'],['events','이벤트'],['closing','마감']].map(([key,label])=><button key={key} className={view===key?'active':''} onClick={()=>navigate(key)}>{label}</button>)}</nav><LocationSearch query={query} onChange={setQuery} inputRef={searchInput} onSubmit={directSearch} onChoose={name=>{setQuery(name);setView('search');setSearched(null);setSearching(false);setError('');}}/></div></header>
- <main>{view==='events'?<Suspense fallback={<p role="status">10월 이벤트를 불러오는 중…</p>}><Events/></Suspense>:view==='schedule'?<Suspense fallback={<p role="status">시간표를 불러오는 중…</p>}><SchedulePanel adminRequest={scheduleAdmin}/></Suspense>:view==='closing'?<Suspense fallback={<p role="status">마감 체크리스트를 불러오는 중…</p>}><ClosingChecklist/></Suspense>:<><div className="eyebrow">YOUR DAILY PRODUCT EDIT</div><div className="title-row"><div><h1>{view==='reports'?'최근 리포트':view==='favorites'?'기억해 둘 상품':view==='search'?'상품과 위치 찾기':'우리 매장 TOP5'}</h1><p className="subtitle">{view==='today'?(dailyLoading&&!report?'오늘의 공유 TOP5를 불러오는 중…':report?report.date+(report.shared?' · 공유 TOP5':' · 이 기기 리포트'):'오늘 등록된 TOP5가 없습니다.'):view==='reports'?'이 기기에 저장한 판매 리포트':view==='favorites'?`즐겨찾기 ${favorites.length}개 · 출근 전 가볍게 익혀보세요.`:'품번으로 상품을, 옷 이름으로 매장 위치를 찾아보세요.'}</p></div>{view==='today'&&report&&!report.shared&&<button className="primary" onClick={()=>input.current?.click()} disabled={busy||!hydrated}><Upload size={17}/>새 리포트</button>}{view==='favorites'&&favorites.length>0&&<button className="primary" onClick={()=>{setStudy(true);setAnswer(false);setStudyIndex(0);}}><BookOpen size={18}/>상품 익히기</button>}</div>
- <input ref={input} className="sr-only" type="file" accept="image/png,image/jpeg" onChange={e=>upload(e.target.files?.[0])}/>
+ <main>{view==='events'?<Suspense fallback={<p role="status">10월 이벤트를 불러오는 중…</p>}><Events/></Suspense>:view==='schedule'?<Suspense fallback={<p role="status">시간표를 불러오는 중…</p>}><SchedulePanel adminRequest={scheduleAdmin}/></Suspense>:view==='closing'?<Suspense fallback={<p role="status">마감 체크리스트를 불러오는 중…</p>}><ClosingChecklist/></Suspense>:<><div className="eyebrow">YOUR DAILY PRODUCT EDIT</div><div className="title-row"><div><h1>{view==='reports'?'최근 리포트':view==='favorites'?'기억해 둘 상품':view==='search'?'상품과 위치 찾기':'우리 매장 TOP5'}</h1><p className="subtitle">{view==='today'?(dailyLoading&&!report?'오늘의 공유 TOP5를 불러오는 중…':report?report.date+(report.shared?' · 공유 TOP5':' · 이 기기 리포트'):'오늘 등록된 TOP5가 없습니다.'):view==='reports'?'이 기기에 저장한 판매 리포트':view==='favorites'?`즐겨찾기 ${favorites.length}개 · 출근 전 가볍게 익혀보세요.`:'품번으로 상품을, 옷 이름으로 매장 위치를 찾아보세요.'}</p></div>{view==='today'&&report&&!report.shared&&<button className="primary" onClick={()=>setEditor('manual')} disabled={busy||!hydrated}><Upload size={17}/>TOP5 수정</button>}{view==='favorites'&&favorites.length>0&&<button className="primary" onClick={()=>{setStudy(true);setAnswer(false);setStudyIndex(0);}}><BookOpen size={18}/>상품 익히기</button>}</div>
  {view==='today'&&sharedError&&<p className="closing-warning" role="status">{sharedError}<button onClick={()=>window.location.reload()}>다시 불러오기</button></p>}
  {error&&<div className="error" role="alert">{error}<button aria-label="알림 닫기" onClick={()=>setError('')}><X size={18}/></button></div>}
- {view==='today'&&!dailyLoading&&(!report||busy||draft)&&<section className="upload-section"><div className={'dropzone '+(drag?'drag':'')} onDragOver={e=>{e.preventDefault();setDrag(true);}} onDragLeave={()=>setDrag(false)} onDrop={e=>{e.preventDefault();setDrag(false);upload(e.dataTransfer.files[0]);}}>{preview?<img className="report-preview" src={preview} alt="업로드한 판매 리포트 미리보기"/>:<div className="upload-icon"><ScanLine size={36} strokeWidth={1.25}/></div>}<div><span className="step-label">01 / DAILY REPORT</span><h2>{busy?'리포트를 읽고 있어요':report?'리포트 인식 완료':'판매 리포트 업로드'}</h2><p>{busy?progress:'사진을 올리면 품번과 판매수량만 바로 읽습니다.'}</p><button className="primary" disabled={busy||!hydrated} onClick={()=>input.current?.click()}>{busy?<LoaderCircle className="spin" size={17}/>:<Plus size={17}/>} {busy?'분석 중':'리포트 선택'}</button><button className="manual-entry" disabled={busy} onClick={()=>setEditor('manual')}>직접입력</button><small>JPG · PNG / 최대 25MB</small></div></div><div className="upload-note"><span><Check size={15}/>PaddleOCR로 정확하게 분석</span><span>우리 매장 TOP5 전용</span></div></section>}
- {view==='reports'&&<div className="history">{reports.map(r=><button key={r.id} onClick={()=>{setReport(r);setView('today');setTab('storeRanking');setFilter('all');}}><div className="history-icon"><Clock size={23}/></div><div><b>{r.date.replaceAll('-','.')}</b><p>{r.store}</p></div><span>TOP5 보기</span><ChevronRight size={20}/></button>)}{!reports.length&&<div className="empty"><Clock size={36}/><h2>아직 저장한 리포트가 없어요</h2><p>오늘의 판매 리포트를 올려보세요.</p><button className="primary" onClick={()=>navigate('today')}>리포트 올리기</button></div>}</div>}
+ {view==='today'&&!dailyLoading&&!report&&<section className="manual-start"><h2>오늘의 TOP5 입력</h2><p>품번과 수량을 직접 입력하거나 GPT 결과를 붙여넣으세요.</p><button className="primary" onClick={()=>setEditor('admin')}>관리자 등록 · GPT 붙여넣기</button><button className="manual-entry" onClick={()=>setEditor('manual')}>이 기기에 직접 입력</button></section>}
+ {view==='reports'&&<div className="history">{reports.map(r=><button key={r.id} onClick={()=>{setReport(r);setView('today');setTab('storeRanking');setFilter('all');}}><div className="history-icon"><Clock size={23}/></div><div><b>{r.date.replaceAll('-','.')}</b><p>{r.store}</p></div><span>TOP5 보기</span><ChevronRight size={20}/></button>)}{!reports.length&&<div className="empty"><Clock size={36}/><h2>아직 저장한 리포트가 없어요</h2><p>오늘의 TOP5를 입력해 보세요.</p><button className="primary" onClick={()=>navigate('today')}>TOP5 입력</button></div>}</div>}
  {view==='today'&&report&&!draft&&!busy&&!showProducts&&
  <section style={{maxWidth:900,margin:'18px auto',padding:'0 18px'}}>
   <div style={{border:'1px solid #e5e7eb',borderRadius:14,overflow:'hidden',background:'#fff'}}>
